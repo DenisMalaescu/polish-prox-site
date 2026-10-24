@@ -1,0 +1,8 @@
+[
+  { "image": "images/IMG_1.jpeg", "title": "Tesla Model X" },
+  { "image": "images/IMG_2.jpeg", "title": "VW T-Cross" },
+  { "image": "images/IMG_3.jpeg", "title": "BMW X5" },
+  { "image": "images/IMG_4.jpeg", "title": "BMW M8" },
+  { "image": "images/IMG_6.jpeg", "title": "BMW M8" },
+  { "image": "images/IMG_7.jpeg", "title": "Mercedes GLC" }
+]

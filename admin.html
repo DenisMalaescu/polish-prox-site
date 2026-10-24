@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Galerie — Polish ProX</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0A0A0A; color: #F5F5F5; display: flex; justify-content: center; padding: 40px 15px; }
+    .card { background: #141414; border: 1px solid #222; border-radius: 8px; max-width: 500px; width: 100%; padding: 30px; }
+    h2 { color: #D41F1F; margin-bottom: 20px; text-transform: uppercase; letter-spacing: 1px; }
+    label { font-size: 13px; color: #888; display: block; margin-bottom: 6px; }
+    input[type="text"], input[type="password"], input[type="file"] {
+      width: 100%; padding: 12px; background: #1E1E1E; border: 1px solid #333; color: #fff; border-radius: 4px; margin-bottom: 16px;
+    }
+    button {
+      width: 100%; padding: 14px; background: #D41F1F; color: #fff; border: none; font-weight: bold;
+      text-transform: uppercase; letter-spacing: 1px; border-radius: 4px; cursor: pointer; transition: 0.2s;
+    }
+    button:hover { background: #FF2828; }
+    button:disabled { background: #555; cursor: not-allowed; }
+    .status { margin-top: 15px; font-size: 14px; text-align: center; }
+    .hidden { display: none; }
+    .logout-btn { background: transparent; border: 1px solid #333; color: #888; padding: 6px 12px; margin-bottom: 20px; width: auto; font-size: 12px; }
+    .logout-btn:hover { background: #222; color: #fff; }
+  </style>
+</head>
+<body>
+
+<div class="card">
+  <!-- ECRAN LOGIN TOKEN -->
+  <div id="loginBox">
+    <h2>Autentificare</h2>
+    <label>GitHub Personal Token</label>
+    <input type="password" id="ghToken" placeholder="ghp_xxxxxxxxxxxx">
+    <button onclick="saveToken()">Intră în Panou</button>
+  </div>
+
+  <!-- ECRAN UPLOAD -->
+  <div id="uploadBox" class="hidden">
+    <div style="display: flex; justify-content: space-between; align-items: center;">
+      <h2>Adaugă Lucrare</h2>
+      <button class="logout-btn" onclick="logout()">Ieșire</button>
+    </div>
+
+    <label>Model Mașină / Titlu</label>
+    <input type="text" id="carTitle" placeholder="Ex: Audi RS6 / Corecție Lac">
+
+    <label>Alege Poza (Direct din Galerie / Cameră)</label>
+    <input type="file" id="imageFile" accept="image/*">
+
+    <button id="submitBtn" onclick="uploadWork()">Încarcă pe Site</button>
+    <div id="statusMsg" class="status"></div>
+  </div>
+</div>
+
+<script>
+  // COMPLETEAZĂ CU DATELE TALE DE GITHUB:
+  const GH_USER = 'DenisMalaescu'; // ex: denis123
+  const GH_REPO = 'polish-prox-site';       // ex: polishprox-site
+  const GH_BRANCH = 'main';                 // ramura principală (main sau master)
+
+  // Verificare token salvat
+  if (localStorage.getItem('prox_admin_token')) {
+    showUpload();
+  }
+
+  function saveToken() {
+    const token = document.getElementById('ghToken').value.trim();
+    if (!token) return alert('Introdu token-ul generat!');
+    localStorage.setItem('prox_admin_token', token);
+    showUpload();
+  }
+
+  function logout() {
+    localStorage.removeItem('prox_admin_token');
+    document.getElementById('uploadBox').classList.add('hidden');
+    document.getElementById('loginBox').classList.remove('hidden');
+  }
+
+  function showUpload() {
+    document.getElementById('loginBox').classList.add('hidden');
+    document.getElementById('uploadBox').classList.remove('hidden');
+  }
+
+  // Conversie fișier în Base64
+  const toBase64 = file => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result.split(',')[1]);
+    reader.onerror = error => reject(error);
+  });
+
+  async function uploadWork() {
+    const token = localStorage.getItem('prox_admin_token');
+    const title = document.getElementById('carTitle').value.trim();
+    const fileInput = document.getElementById('imageFile');
+    const status = document.getElementById('statusMsg');
+    const btn = document.getElementById('submitBtn');
+
+    if (!title || !fileInput.files.length) {
+      alert('Completează titlul și alege o poză!');
+      return;
+    }
+
+    const file = fileInput.files[0];
+    const fileExt = file.name.split('.').pop();
+    const cleanFileName = `IMG_${Date.now()}.${fileExt}`;
+    const imagePath = `images/${cleanFileName}`;
+
+    btn.disabled = true;
+    status.style.color = '#FFB800';
+    status.textContent = '1/2. Se urcă imaginea...';
+
+    try {
+      const base64Content = await toBase64(file);
+
+      // 1. Upload poza în folderul images/ prin GitHub API
+      const imgRes = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/${imagePath}`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: `Add gallery image: ${cleanFileName}`,
+          content: base64Content,
+          branch: GH_BRANCH
+        })
+      });
+
+      if (!imgRes.ok) throw new Error('Eroare la încărcarea imaginii. Verifică datele și token-ul.');
+
+      status.textContent = '2/2. Se actualizează galeria...';
+
+      // 2. Luăm fișierul galerie.json curent
+      const jsonRes = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/galerie.json?ref=${GH_BRANCH}`, {
+        headers: { 'Authorization': `token ${token}` }
+      });
+
+      let currentJson = [];
+      let sha = null;
+
+      if (jsonRes.ok) {
+        const jsonData = await jsonRes.json();
+        sha = jsonData.sha;
+        // Decodare utf-8 sigură pentru caractere speciale
+        const decodedStr = decodeURIComponent(escape(atob(jsonData.content)));
+        currentJson = JSON.parse(decodedStr);
+      }
+
+      // Adăugăm noua lucrare la începutul listei
+      currentJson.unshift({
+        image: imagePath,
+        title: title
+      });
+
+      // 3. Salvăm noul galerie.json în repo
+      const updatedBase64 = btoa(unescape(encodeURIComponent(JSON.stringify(currentJson, null, 2))));
+      const updateRes = await fetch(`https://api.github.com/repos/${GH_USER}/${GH_REPO}/contents/galerie.json`, {
+        method: 'PUT',
+        headers: {
+          'Authorization': `token ${token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          message: `Update gallery: added ${title}`,
+          content: updatedBase64,
+          sha: sha,
+          branch: GH_BRANCH
+        })
+      });
+
+      if (!updateRes.ok) throw new Error('Eroare la actualizarea fișierului galerie.json.');
+
+      status.style.color = '#00FF66';
+      status.textContent = 'Lucrare adăugată cu succes! Site-ul se actualizează.';
+      document.getElementById('carTitle').value = '';
+      fileInput.value = '';
+
+    } catch (err) {
+      status.style.color = '#FF4444';
+      status.textContent = err.message;
+    } finally {
+      btn.disabled = false;
+    }
+  }
+</script>
+</body>
+</html>
